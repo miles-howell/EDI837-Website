@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClaimTracker</title>
+  <meta name="description" content="ClaimTracker turns raw X12 837 claim data into print-accurate UB-04 and CMS-1500 forms. A modern Django replacement for a legacy claim viewer.">
+  <meta property="og:title" content="ClaimTracker">
+  <meta property="og:description" content="Read 837 claims as the forms they describe. Print-accurate UB-04 and CMS-1500 rendering, fast search, and a safe read-only design.">
+  <meta name="theme-color" content="#0a456a">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink:#14212e; --muted:#5b6876; --line:#dfe5ec; --bg:#f6f8fb; --surface:#fff;
+      --accent:#005d9a; --accent-dark:#0a456a; --accent-mid:#345f9a; --accent-tint:#e8f0f8;
+      --button:#1f73c9; --button-hover:#155ea8; --on-accent:#fff;
+      --form-bg:#fffdf6; --form-line:#c8473f; --form-ink:#1d1d1b; --form-hl:#f6e7a8;
+      --code-bg:#0f1b27; --code-ink:#c9d6e3; --code-key:#7fb6ea; --code-val:#f2c879; --code-dim:#5f7183;
+      --ok:#1f8a5b; --warn:#b7791f;
+      --shadow:0 1px 2px rgba(16,32,48,.06), 0 8px 28px rgba(16,32,48,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --ink:#e4e9ef; --muted:#9aa6b3; --line:#27313c; --bg:#0f141a; --surface:#161d25;
+        --accent:#4c9ae0; --accent-dark:#a9d0f3; --accent-mid:#7bb0e4; --accent-tint:#18273a;
+        --button:#2f82d6; --button-hover:#4794e2;
+        --code-bg:#0a1219; --ok:#4cc38a; --warn:#e0a84a;
+        --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
+      }
+    }
+    :root[data-theme="dark"] {
+      --ink:#e4e9ef; --muted:#9aa6b3; --line:#27313c; --bg:#0f141a; --surface:#161d25;
+      --accent:#4c9ae0; --accent-dark:#a9d0f3; --accent-mid:#7bb0e4; --accent-tint:#18273a;
+      --button:#2f82d6; --button-hover:#4794e2;
+      --code-bg:#0a1219; --ok:#4cc38a; --warn:#e0a84a;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
+    }
+
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+           -webkit-font-smoothing:antialiased; }
+    a { color:var(--accent); }
+    code, .mono, .raw, .quirk { font-variant-ligatures:none; }
+    code, .mono { font-family:"JetBrains Mono", ui-monospace, Consolas, monospace; font-size:.88em; }
+    .wrap { max-width:1120px; margin:0 auto; padding:0 24px; }
+    @media (max-width:600px) { .wrap { padding:0 16px; } }
+
+    /* Header */
+    .topbar { height:4px; background:linear-gradient(90deg, var(--accent-dark), var(--accent), var(--accent-mid)); }
+    header.nav { position:sticky; top:0; z-index:10; background:color-mix(in srgb, var(--bg) 88%, transparent);
+                 backdrop-filter:saturate(1.4) blur(10px); border-bottom:1px solid var(--line); }
+    header.nav .wrap { display:flex; align-items:center; justify-content:space-between; height:60px; gap:16px; }
+    .brand { display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--ink); font-weight:700; letter-spacing:-.01em; }
+    .brand svg { width:28px; height:28px; flex:none; }
+    .nav-links { display:flex; align-items:center; gap:24px; }
+    .nav-links a { color:var(--muted); text-decoration:none; font-size:14px; font-weight:500; }
+    .nav-links a:hover { color:var(--ink); }
+    .theme-toggle { width:34px; height:34px; border-radius:8px; border:1px solid var(--line); background:var(--surface);
+                    color:var(--ink); cursor:pointer; display:grid; place-items:center; }
+    .theme-toggle svg { width:16px; height:16px; }
+    @media (max-width:760px) { .nav-links a:not(.keep) { display:none; } }
+
+    /* Buttons */
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:9px; font-weight:600; font-size:15px;
+           text-decoration:none; border:1px solid transparent; transition:background .15s, border-color .15s; }
+    .btn-primary { background:var(--button); color:var(--on-accent); }
+    .btn-primary:hover { background:var(--button-hover); }
+    .btn-ghost { border-color:var(--line); color:var(--ink); background:var(--surface); }
+    .btn-ghost:hover { border-color:var(--accent); }
+    .btn svg { width:18px; height:18px; }
+
+    /* Hero */
+    .hero { padding:80px 0 56px; }
+    .hero-grid { display:grid; grid-template-columns:1.05fr 1fr; gap:56px; align-items:center; }
+    .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--accent);
+               background:var(--accent-tint); padding:5px 12px; border-radius:999px; margin-bottom:20px; }
+    .eyebrow .dot { width:7px; height:7px; border-radius:50%; background:var(--ok); }
+    h1 { font-size:clamp(36px, 5vw, 56px); line-height:1.06; letter-spacing:-.035em; margin:0 0 20px; font-weight:800; }
+    h1 .accent { color:var(--accent); }
+    .lede { font-size:19px; color:var(--muted); margin:0 0 32px; max-width:34em; }
+    .cta { display:flex; flex-wrap:wrap; gap:12px; }
+    @media (max-width:900px) { .hero-grid { grid-template-columns:1fr; gap:40px; } .hero { padding-top:48px; } }
+
+    /* Hero visual: raw row -> form */
+    .transform { position:relative; display:grid; gap:14px; }
+    .raw { background:var(--code-bg); color:var(--code-ink); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow);
+           font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12.5px; line-height:1.7; overflow:hidden; }
+    .raw .bar { display:flex; gap:6px; margin-bottom:10px; }
+    .raw .bar i { width:9px; height:9px; border-radius:50%; background:#2c3b4a; display:block; }
+    .raw .bar span { margin-left:auto; color:var(--code-dim); font-size:11px; }
+    .raw .k { color:var(--code-key); } .raw .v { color:var(--code-val); } .raw .d { color:var(--code-dim); }
+    .raw .row { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .arrow { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--muted); font-size:12px; font-weight:600;
+             text-transform:uppercase; letter-spacing:.08em; }
+    .arrow svg { width:18px; height:18px; color:var(--accent); }
+    .form { background:var(--form-bg); color:var(--form-ink); border-radius:12px; padding:14px; box-shadow:var(--shadow);
+            border:1px solid var(--line); }
+    .form-title { display:flex; justify-content:space-between; align-items:baseline; font-size:11px; font-weight:700;
+                  color:var(--form-line); letter-spacing:.06em; margin:0 2px 8px; }
+    .form-title span:last-child { color:#8a7f6a; font-weight:500; }
+    .boxes { display:grid; grid-template-columns:repeat(6, 1fr); border-top:1px solid var(--form-line); border-left:1px solid var(--form-line); }
+    .box { border-right:1px solid var(--form-line); border-bottom:1px solid var(--form-line); padding:3px 6px 5px; min-height:44px; }
+    .box b { display:block; font-size:8.5px; font-weight:600; color:var(--form-line); letter-spacing:.02em; text-transform:uppercase; }
+    .box em { display:inline-block; font-style:normal; font-family:"JetBrains Mono", monospace; font-size:11.5px; margin-top:3px;
+              background:var(--form-hl); padding:0 3px; border-radius:2px; }
+    .c2 { grid-column:span 2; } .c3 { grid-column:span 3; } .c4 { grid-column:span 4; } .c6 { grid-column:span 6; }
+    .dxrow { display:grid; grid-template-columns:repeat(5, 1fr); gap:4px; margin-top:3px; }
+    .dxrow em { margin:0; text-align:center; }
+    .sample { font-size:11px; color:var(--muted); text-align:center; margin-top:2px; }
+
+    /* Sections */
+    section { padding:72px 0; }
+    section.alt { background:var(--surface); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .kicker { font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 10px; }
+    h2 { font-size:clamp(28px, 3.4vw, 38px); letter-spacing:-.025em; line-height:1.15; margin:0 0 14px; font-weight:800; }
+    .section-lede { color:var(--muted); font-size:18px; max-width:40em; margin:0 0 44px; }
+
+    /* Stats */
+    .stats { display:grid; grid-template-columns:repeat(4, 1fr); gap:1px; background:var(--line); border:1px solid var(--line);
+             border-radius:14px; overflow:hidden; }
+    .stat { background:var(--surface); padding:24px 22px; }
+    .stat strong { display:block; font-size:32px; font-weight:800; letter-spacing:-.03em; color:var(--accent-dark); line-height:1.1; }
+    .stat span { color:var(--muted); font-size:14px; }
+    @media (max-width:760px) { .stats { grid-template-columns:repeat(2, 1fr); } }
+
+    /* Features */
+    .features { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+    .feature { background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:24px; }
+    section:not(.alt) .feature { background:var(--surface); }
+    .feature .icon { width:40px; height:40px; border-radius:10px; background:var(--accent-tint); color:var(--accent);
+                     display:grid; place-items:center; margin-bottom:16px; }
+    .feature .icon svg { width:20px; height:20px; }
+    .feature h3 { margin:0 0 8px; font-size:17px; letter-spacing:-.01em; }
+    .feature p { margin:0; color:var(--muted); font-size:15px; }
+    @media (max-width:900px) { .features { grid-template-columns:1fr 1fr; } }
+    @media (max-width:600px) { .features { grid-template-columns:1fr; } }
+
+    /* Pipeline */
+    .pipeline { display:grid; grid-template-columns:repeat(4, 1fr); gap:0; counter-reset:step; }
+    .step { position:relative; padding:0 20px 0 0; }
+    .step .num { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+    .step .num::before { counter-increment:step; content:counter(step); width:32px; height:32px; flex:none; border-radius:50%;
+                         background:var(--accent); color:var(--on-accent); display:grid; place-items:center; font-weight:700; font-size:14px; }
+    .step .num::after { content:""; height:2px; flex:1; background:linear-gradient(90deg, var(--accent), var(--line)); }
+    .step:last-child .num::after { display:none; }
+    .step h3 { margin:0 0 6px; font-size:17px; }
+    .step p { margin:0; color:var(--muted); font-size:15px; }
+    .step .tag { display:inline-block; margin-top:10px; font-size:12px; font-weight:600; padding:2px 9px; border-radius:999px;
+                 border:1px solid var(--line); color:var(--muted); }
+    .step .tag.us { border-color:var(--accent); color:var(--accent); background:var(--accent-tint); }
+    @media (max-width:900px) {
+      .pipeline { grid-template-columns:1fr; gap:28px; }
+      .step { padding:0; }
+      .step .num::after { display:none; }
+    }
+
+    /* Principles */
+    .split { display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:start; }
+    .split > * { min-width:0; }
+    .principles { list-style:none; margin:0; padding:0; display:grid; gap:18px; }
+    .principles li { display:grid; grid-template-columns:28px 1fr; gap:12px; }
+    .principles li svg { width:22px; height:22px; color:var(--ok); margin-top:2px; }
+    .principles strong { display:block; }
+    .principles span { color:var(--muted); font-size:15px; }
+    .quirk { background:var(--code-bg); color:var(--code-ink); border-radius:12px; padding:20px 22px; font-family:"JetBrains Mono", monospace;
+             font-size:13px; line-height:1.75; box-shadow:var(--shadow); overflow-x:auto; white-space:pre; }
+    .quirk .c { color:var(--code-dim); } .quirk .w { color:var(--code-val); } .quirk .k { color:var(--code-key); }
+    .quirk-cap { color:var(--muted); font-size:14px; margin:12px 2px 0; }
+    @media (max-width:900px) { .split { grid-template-columns:1fr; gap:32px; } }
+
+    /* Roadmap */
+    .roadmap { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+    .lane { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; }
+    .lane h3 { display:flex; align-items:center; gap:10px; margin:0 0 14px; font-size:15px; text-transform:uppercase; letter-spacing:.06em; }
+    .lane h3 i { width:10px; height:10px; border-radius:50%; display:block; }
+    .lane ul { margin:0; padding:0 0 0 18px; color:var(--muted); font-size:15px; display:grid; gap:8px; }
+    .lane ul li::marker { color:var(--line); }
+    @media (max-width:900px) { .roadmap { grid-template-columns:1fr; } }
+
+    /* Stack */
+    .stack { display:flex; flex-wrap:wrap; gap:10px; }
+    .chip { border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:7px 14px; font-size:14px; font-weight:500; }
+
+    /* CTA band */
+    .band { background:linear-gradient(135deg, var(--accent-dark), var(--accent)); color:#fff; border-radius:18px; padding:48px;
+            display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+    .band h2 { color:#fff; margin:0 0 6px; }
+    .band p { margin:0; color:rgba(255,255,255,.82); font-size:17px; }
+    .band .btn-primary { background:#fff; color:#0a456a; }
+    .band .btn-primary:hover { background:#e8f0f8; }
+    @media (max-width:600px) { .band { padding:32px 24px; } }
+
+    footer { padding:40px 0 48px; color:var(--muted); font-size:14px; }
+    footer .wrap { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    footer a { color:var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="topbar"></div>
+  <header class="nav">
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="ClaimTracker home">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#005d9a"/><path d="M9 8h10l4 4v12a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" fill="#fff"/><path d="M11 14h10M11 17.5h10M11 21h6" stroke="#005d9a" stroke-width="1.6" stroke-linecap="round"/></svg>
+        ClaimTracker
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#principles">Design</a>
+        <a href="#roadmap">Roadmap</a>
+        <a class="keep btn btn-ghost" style="padding:7px 14px;font-size:14px" href="https://github.com/miles-howell/EDI837">GitHub</a>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle dark mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <div class="eyebrow"><span class="dot"></span>Feature-complete with the legacy viewer</div>
+          <h1>Read 837 claims as the <span class="accent">forms they describe.</span></h1>
+          <p class="lede">ClaimTracker turns raw X12 837 claim data into print-accurate UB-04 and CMS-1500 forms that you can search and browse. It is a modern Django replacement for an aging internal claim viewer, built to show every code that was submitted.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="#features">See what it does
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+            <a class="btn btn-ghost" href="https://github.com/miles-howell/EDI837">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.2-3.1-.1-.4-.5-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.1 0 4.6-2.8 5.6-5.5 6 .4.3.8 1 .8 2.1v3.1c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+              View the source
+            </a>
+          </div>
+        </div>
+
+        <div class="transform" aria-label="Illustration: a raw database row becomes a rendered claim form">
+          <div class="raw" aria-hidden="true">
+            <div class="bar"><i></i><i></i><i></i><span>RepositoryClaimDiagnosis · row 1</span></div>
+            <div class="row"><span class="k">E_2300_HI0101</span><span class="d">=</span><span class="v">'ABK'</span> <span class="k">E_2300_HI0102</span><span class="d">=</span><span class="v">'J189'</span></div>
+            <div class="row"><span class="k">E_2300_HI0201</span><span class="d">=</span><span class="v">'ABF'</span> <span class="k">E_2300_HI0202</span><span class="d">=</span><span class="v">'E119'</span></div>
+            <div class="row"><span class="k">E_2300_CLM05</span><span class="d">=</span><span class="v">'13:A:1'</span> <span class="k">E_2300_434</span><span class="d">=</span><span class="v">'20260301-20260304'</span></div>
+            <div class="row"><span class="k">E_2400_SV201</span><span class="d">=</span><span class="v">'0250'</span> <span class="k">E_2400_SV203</span><span class="d">=</span><span class="v">'1240.00'</span> <span class="d">…</span></div>
+          </div>
+          <div class="arrow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M6 14l6 6 6-6"/></svg>
+            Rendered as
+          </div>
+          <div class="form">
+            <div class="form-title"><span>UB-04 · INSTITUTIONAL</span><span>Sample data</span></div>
+            <div class="boxes">
+              <div class="box c3"><b>8 Patient name</b><em>SAMPLE, JANE</em></div>
+              <div class="box"><b>4 Type of bill</b><em>0131</em></div>
+              <div class="box c2"><b>6 Statement covers period</b><em>030126</em> <em>030426</em></div>
+              <div class="box"><b>42 Rev cd</b><em>0250</em></div>
+              <div class="box c3"><b>43 Description</b><em>PHARMACY</em></div>
+              <div class="box c2"><b>47 Total charges</b><em>1,240.00</em></div>
+              <div class="box c6"><b>66–67 Principal &amp; other diagnosis codes</b>
+                <div class="dxrow"><em>J189</em><em>E119</em><em>I10</em><em>N179</em><em>Z794</em></div>
+              </div>
+            </div>
+          </div>
+          <div class="sample">Illustrative, synthetic values only</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="alt" style="padding:40px 0">
+      <div class="wrap">
+        <div class="stats">
+          <div class="stat"><strong>81 + 33</strong><span>numbered boxes rendered on the UB-04 and CMS-1500</span></div>
+          <div class="stat"><strong>~124</strong><span>legacy report fields, each ported to its original box</span></div>
+          <div class="stat"><strong>3 ways</strong><span>to find a claim: Claim ID, Localuse #, or QNXT claim #</span></div>
+          <div class="stat"><strong>0</strong><span>schema changes or writes to the source database</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <p class="kicker">Features</p>
+        <h2>Everything the old viewer did, plus the codes it dropped.</h2>
+        <p class="section-lede">ClaimTracker matches the legacy tool's day-to-day workflow. It also fixes the places where that tool hid data from the people reading claims.</p>
+        <div class="features">
+          <div class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M10 9v12M4 15h16"/></svg></div>
+            <h3>Print-accurate forms</h3>
+            <p>UB-04 and CMS-1500 layouts were generated straight from the legacy report definitions, with the real column widths and row heights in inches. They print the same way they look on screen.</p>
+          </div>
+          <div class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></div>
+            <h3>Browse by date</h3>
+            <p>Pick a day on the calendar, then a file, then a pay-to provider, then a member. Each dropdown fills in from the one before it, and you can page through members with Prev and Next.</p>
+          </div>
+          <div class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+            <h3>One search box</h3>
+            <p>Type a Claim ID, a Localuse number or a QNXT claim number. ClaimTracker tries each one in turn, opens the match and moves the calendar and dropdowns to where that claim lives.</p>
+          </div>
+          <div class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+            <h3>Adjudication status inline</h3>
+            <p>A side panel shows the selected claim's QNXT claim number, status, clean date, OK-to-pay date and paid date. It loads separately, so a slow lookup never holds up the form.</p>
+          </div>
+          <div class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+            <h3>Recovers dropped codes</h3>
+            <p>The legacy loader silently drops some diagnosis and procedure codes. ClaimTracker detects the gap and rebuilds those codes from the original 837 file. Every DX, ECI and procedure code then appears on the form.</p>
+          </div>
+          <div class="feature">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg></div>
+            <h3>Fast by design</h3>
+            <p>Claim queries run in parallel, and recently opened claims are cached in memory. The calendar and dropdowns come from a snapshot that is rebuilt every night, so the page appears before the claim has finished loading.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="alt" id="how">
+      <div class="wrap">
+        <p class="kicker">How it works</p>
+        <h2>From flat EDI text to a form a person can read.</h2>
+        <p class="section-lede">An 837 claim is stored as positional columns such as <code>E_2300_CLM01</code>, which nobody can read at a glance. ClaimTracker is the read side: it assembles those columns back into a claim.</p>
+        <div class="pipeline">
+          <div class="step">
+            <div class="num"></div>
+            <h3>837 files arrive</h3>
+            <p>Providers submit institutional (837I) and professional (837P) claims as delimited X12 text.</p>
+            <span class="tag">Upstream</span>
+          </div>
+          <div class="step">
+            <div class="num"></div>
+            <h3>Loaded to SQL Server</h3>
+            <p>A scheduled parser writes each segment into repository tables, one column per element position.</p>
+            <span class="tag">Upstream · to be absorbed</span>
+          </div>
+          <div class="step">
+            <div class="num"></div>
+            <h3>Reassembled</h3>
+            <p>A raw-SQL service layer combines data across loops, splits a single diagnosis table by qualifier and builds the bill type.</p>
+            <span class="tag us">ClaimTracker</span>
+          </div>
+          <div class="step">
+            <div class="num"></div>
+            <h3>Rendered</h3>
+            <p>The result lands in the real numbered boxes: UB-04 for 837I claims and CMS-1500 for 837P claims.</p>
+            <span class="tag us">ClaimTracker</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="principles">
+      <div class="wrap split">
+        <div>
+          <p class="kicker">Design principles</p>
+          <h2>Built for healthcare data, where wrong guesses are costly.</h2>
+          <p class="section-lede" style="margin-bottom:32px">Claims contain protected health information, and the source system is decades of accumulated behavior. ClaimTracker is careful by default.</p>
+          <ul class="principles">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <div><strong>Read-only, schema untouched</strong><span>The Django models mirror the existing tables as unmanaged. No migrations ever run against the source database.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <div><strong>Faithful ports, flagged quirks</strong><span>Each legacy query is ported one-to-one. Odd behavior is marked with a <code>QUIRK</code> comment and kept until someone checks it against real claims.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <div><strong>PHI-aware logging</strong><span>Structured JSON logs record identifiers only, never claim contents. Errors trigger email alerts.</span></div></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <div><strong>Access control ready</strong><span>Mutual-TLS client-certificate authentication and a per-claim access audit log are built. They are switched off until certificate issuance is available.</span></div></li>
+          </ul>
+        </div>
+        <div>
+          <div class="quirk" aria-label="Example of a preserved legacy quirk"><span class="c">-- QUIRK: preserved from the legacy query.</span>
+<span class="c">-- Almost certainly meant AND, but the legacy</span>
+<span class="c">-- screen's output depends on it. Verify on a</span>
+<span class="c">-- known claim before "fixing".</span>
+<span class="k">CASE WHEN</span> E_2400_SV105 <span class="k">IS NOT NULL</span>
+     <span class="w">OR</span> E_2400_SV105 != ''
+<span class="k">THEN</span> ...</div>
+          <p class="quirk-cap">A real example from the service layer. When ClaimTracker changes how the legacy tool behaved, it does so on purpose and records why.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="alt" id="roadmap">
+      <div class="wrap">
+        <p class="kicker">Roadmap</p>
+        <h2>Where the project stands.</h2>
+        <p class="section-lede">The viewer side of the legacy tool can now be retired. Next comes taking over the loader that feeds it.</p>
+        <div class="roadmap">
+          <div class="lane">
+            <h3><i style="background:var(--ok)"></i>Done</h3>
+            <ul>
+              <li>Search and browse at parity with the legacy tool</li>
+              <li>Print-accurate UB-04 and CMS-1500 forms</li>
+              <li>Full diagnosis, procedure, ECI and condition code display</li>
+              <li>Live QNXT adjudication status</li>
+              <li>Nightly browse snapshot, structured logging and alerts</li>
+              <li>Dark mode</li>
+            </ul>
+          </div>
+          <div class="lane">
+            <h3><i style="background:var(--accent)"></i>Next</h3>
+            <ul>
+              <li>Production deployment and hosting</li>
+              <li>Test suite against known UB and HCFA claims</li>
+              <li>Turn on certificate-based access control</li>
+            </ul>
+          </div>
+          <div class="lane">
+            <h3><i style="background:var(--warn)"></i>Planned</h3>
+            <ul>
+              <li>Take over 837 ingestion from the legacy loader</li>
+              <li>A manual re-run when a load fails</li>
+              <li>Fewer hand-edited files before a load succeeds</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <p class="kicker">Built with</p>
+        <h2 style="margin-bottom:24px">A small, boring stack.</h2>
+        <div class="stack">
+          <span class="chip">Python</span><span class="chip">Django</span><span class="chip">SQL Server · mssql-django</span>
+          <span class="chip">SQLite read-model</span><span class="chip">Waitress</span><span class="chip">Caddy</span>
+          <span class="chip">usaddress</span><span class="chip">Playwright (layout checks)</span>
+        </div>
+      </div>
+    </section>
+
+    <section style="padding-top:0">
+      <div class="wrap">
+        <div class="band">
+          <div>
+            <h2>Explore the code.</h2>
+            <p>The repo's AGENTS.md records each decision, quirk and open question.</p>
+          </div>
+          <a class="btn btn-primary" href="https://github.com/miles-howell/EDI837">Open on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>ClaimTracker · Read-only 837 claim viewer</span>
+      <span>All form values shown on this page are synthetic.</span>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var root = document.documentElement, key = 'ct-theme';
+      try { var saved = localStorage.getItem(key); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+      document.getElementById('theme-toggle').addEventListener('click', function () {
+        var current = root.getAttribute('data-theme') ||
+          (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        var next = current === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        try { localStorage.setItem(key, next); } catch (e) {}
+      });
+    })();
+  </script>
+</body>
+</html>
